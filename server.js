@@ -18,7 +18,7 @@ const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const SESSION_DAYS = 30;
-const MAX_UPLOAD = 60 * 1024 * 1024;
+const MAX_UPLOAD = 15 * 1024 * 1024;
 const MAX_AVATAR = 3 * 1024 * 1024;
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏'];
 
@@ -271,7 +271,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'same-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), geolocation=(), microphone=(self)');
+  res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(), microphone=(self), display-capture=(self)');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; " +
     "script-src 'self'; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
@@ -300,20 +300,17 @@ const auth = (req, res, next) => {
 /* آپلود فایل (بدنه‌ی خام) */
 const MIME_EXT = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/avif': 'avif',
-  'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'video/ogg': 'ogv',
   'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/wav': 'wav',
   'audio/x-m4a': 'm4a', 'audio/aac': 'aac', 'audio/x-wav': 'wav',
 };
+// فقط ویس و عکس پروفایل قابل آپلود است
 const KIND_RULES = {
-  image: (m) => m.startsWith('image/') && MIME_EXT[m],
   avatar: (m) => m.startsWith('image/') && MIME_EXT[m],
-  video: (m) => m.startsWith('video/') && MIME_EXT[m],
   voice: (m) => m.startsWith('audio/') && MIME_EXT[m],
-  file: () => true,
 };
 app.post('/api/upload', auth, express.raw({ type: () => true, limit: MAX_UPLOAD }), (req, res) => {
   if (!rateLimit('up:' + req.uid, 60, 10 * 60 * 1000)) return fail(res, 429, 'تعداد آپلودها زیاد است؛ کمی صبر کنید.');
-  const kind = String(req.query.kind || 'file');
+  const kind = String(req.query.kind || '');
   const rule = KIND_RULES[kind];
   if (!rule) return fail(res, 400, 'نوع فایل نامعتبر است.');
   const body = req.body;
@@ -644,7 +641,7 @@ app.post('/api/chats/:id/messages', auth, (req, res) => {
   if (!isMember(id, req.uid)) return fail(res, 404, 'گفتگو پیدا نشد.');
   if (!rateLimit('msg:' + req.uid, 120, 60 * 1000)) return fail(res, 429, 'خیلی سریع پیام می‌فرستید؛ کمی صبر کنید.');
   const type = String(req.body.type || 'text');
-  if (!['text', 'image', 'video', 'voice', 'file'].includes(type)) return fail(res, 400, 'نوع پیام نامعتبر است.');
+  if (!['text', 'voice'].includes(type)) return fail(res, 400, 'نوع پیام نامعتبر است.');
   const body = String(req.body.body ?? '').replace(/\u0000/g, '').trim().slice(0, 4000);
   const fields = { type, body };
   if (type === 'text') {
@@ -652,7 +649,7 @@ app.post('/api/chats/:id/messages', auth, (req, res) => {
   } else {
     const up = q('SELECT * FROM uploads WHERE name=? AND user_id=?').get(String(req.body.file || ''), req.uid);
     if (!up) return fail(res, 400, 'فایل پیدا نشد؛ دوباره آپلود کنید.');
-    const okMime = { image: up.mime.startsWith('image/'), video: up.mime.startsWith('video/'), voice: up.mime.startsWith('audio/'), file: true }[type];
+    const okMime = up.mime.startsWith('audio/');
     if (!okMime) return fail(res, 400, 'نوع فایل با نوع پیام هم‌خوانی ندارد.');
     Object.assign(fields, { file: up.name, file_name: up.orig_name, file_size: up.size, file_mime: up.mime });
     if (type === 'voice') fields.duration = Math.max(0, Math.min(Number(req.body.duration) || 0, 3600));
@@ -709,6 +706,17 @@ app.post('/api/messages/:id/react', auth, (req, res) => {
   res.json({ message: out });
 });
 
+/* تنظیمات ICE برای WebRTC: STUN همیشه، TURN اگر در محیط تنظیم شده باشد */
+app.get('/api/ice', auth, (req, res) => {
+  const list = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const stun = list(process.env.STUN_URLS);
+  const iceServers = [{ urls: stun.length ? stun : ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  const turn = list(process.env.TURN_URLS);
+  if (turn.length && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL)
+    iceServers.push({ urls: turn, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
+  res.json({ iceServers });
+});
+
 app.use('/api', (req, res) => fail(res, 404, 'یافت نشد.'));
 
 /* ───────────── فایل‌های ایستا ───────────── */
@@ -723,15 +731,93 @@ app.use(express.static(path.join(__dirname, 'public'), {
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.use((err, req, res, next) => {
-  if (err.type === 'entity.too.large') return fail(res, 413, 'حجم فایل بیش از حد مجاز است (حداکثر ۶۰ مگابایت).');
+  if (err.type === 'entity.too.large') return fail(res, 413, 'حجم فایل بیش از حد مجاز است (حداکثر ۱۵ مگابایت).');
   if (err.type === 'entity.parse.failed') return fail(res, 400, 'درخواست نامعتبر است.');
   console.error(err);
   fail(res, 500, 'مشکلی پیش آمد.');
 });
 
+
+/* ───────────── تماس (هماهنگی WebRTC) ───────────── */
+const calls = new Map();      // callId -> call
+const userCall = new Map();   // userId -> call
+const RING_MS = 45000;
+const DISCONNECT_GRACE = 10000;
+
+function callSend(uid, payload, exceptWs) {
+  const set = sockets.get(uid); if (!set) return;
+  const data = JSON.stringify({ event: 'call', ...payload });
+  for (const w of set) if (w !== exceptWs && w.readyState === 1) w.send(data);
+}
+const fmtDuration = (ms) => {
+  const s = Math.max(1, Math.round(ms / 1000));
+  const d = (n) => String(n).padStart(2, '0');
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return (h ? `${h}:${d(m)}:${d(r)}` : `${m}:${d(r)}`).replace(/\d/g, (x) => '۰۱۲۳۴۵۶۷۸۹'[x]);
+};
+function endCall(call, reason) {
+  if (!calls.has(call.id)) return;
+  calls.delete(call.id);
+  clearTimeout(call.timer);
+  for (const uid of [call.caller, call.callee]) {
+    if (userCall.get(uid) === call) userCall.delete(uid);
+    clearTimeout(call.grace?.[uid]);
+  }
+  const kind = call.video ? 'تصویری' : 'صوتی';
+  let log;
+  if (call.answeredAt) log = `تماس ${kind} · ${fmtDuration(Date.now() - call.answeredAt)}`;
+  else if (reason === 'rejected') log = `تماس ${kind} رد شد`;
+  else log = `تماس ${kind} بی‌پاسخ`;
+  for (const uid of [call.caller, call.callee]) callSend(uid, { op: 'ended', call_id: call.id, chat_id: call.chat, reason });
+  try { addMessage(call.chat, call.caller, { type: 'system', body: log }); } catch (e) { console.error(e); }
+}
+function otherParty(call, uid) { return call.caller === uid ? call.callee : call.caller; }
+
+function handleCall(ws, d) {
+  const uid = ws.uid;
+  const op = String(d.op || '');
+  const callId = String(d.call_id || '').slice(0, 64);
+  if (!callId) return;
+
+  if (op === 'invite') {
+    if (!Number.isInteger(d.chat_id) || !rateLimit('invite:' + uid, 12, 60 * 1000)) return;
+    const chat = q('SELECT * FROM chats WHERE id=?').get(d.chat_id);
+    if (!chat || chat.type !== 'dm' || !isMember(chat.id, uid)) return;
+    const peer = memberIds(chat.id).find((x) => x !== uid); if (!peer) return;
+    const video = !!d.video;
+    const call = { id: callId, chat: chat.id, caller: uid, callee: peer, video, answeredAt: 0, grace: {} };
+    if (calls.has(callId) || userCall.has(uid)) return callSend(uid, { op: 'ended', call_id: callId, reason: 'busy' });
+    if (userCall.has(peer)) { callSend(uid, { op: 'ended', call_id: callId, reason: 'busy' }); addMessage(chat.id, uid, { type: 'system', body: `تماس ${video ? 'تصویری' : 'صوتی'} بی‌پاسخ (مشغول)` }); return; }
+    if (!isOnline(peer)) { callSend(uid, { op: 'ended', call_id: callId, reason: 'unavailable' }); addMessage(chat.id, uid, { type: 'system', body: `تماس ${video ? 'تصویری' : 'صوتی'} بی‌پاسخ` }); return; }
+    calls.set(callId, call); userCall.set(uid, call); userCall.set(peer, call);
+    call.timer = setTimeout(() => endCall(call, 'missed'), RING_MS);
+    const me = getUser(uid);
+    callSend(peer, { op: 'incoming', call_id: callId, chat_id: chat.id, video, from: { id: me.id, display_name: me.display_name, avatar: me.avatar || null, username: me.username } });
+    return;
+  }
+
+  const call = calls.get(callId);
+  if (!call || (call.caller !== uid && call.callee !== uid)) return;
+
+  if (op === 'accept' && call.callee === uid && !call.answeredAt) {
+    clearTimeout(call.timer);
+    call.answeredAt = Date.now();
+    callSend(call.caller, { op: 'accepted', call_id: callId });
+    callSend(uid, { op: 'taken', call_id: callId }, ws); // دستگاه‌های دیگر کاربر دیگر زنگ نزنند
+  } else if (op === 'reject' && call.callee === uid && !call.answeredAt) {
+    endCall(call, 'rejected');
+  } else if (op === 'end') {
+    endCall(call, call.answeredAt ? 'ended' : (call.caller === uid ? 'missed' : 'rejected'));
+  } else if ((op === 'signal' || op === 'state') && call.answeredAt) {
+    const data = d.data;
+    if (!data || typeof data !== 'object' || JSON.stringify(data).length > 60000) return;
+    callSend(otherParty(call, uid), { op, call_id: callId, data });
+  }
+}
+
 /* ───────────── وب‌سوکت ───────────── */
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 65536 });
 
 server.on('upgrade', (req, socket, head) => {
   if (!req.url.startsWith('/ws')) return socket.destroy();
@@ -750,11 +836,13 @@ wss.on('connection', (ws) => {
   const wasOnline = isOnline(uid);
   if (!sockets.has(uid)) sockets.set(uid, new Set());
   sockets.get(uid).add(ws);
+  const live = userCall.get(uid); if (live) clearTimeout(live.grace[uid]);
   if (!wasOnline) for (const c of contactIds(uid)) sendTo(c, 'presence', { user_id: uid, online: true });
 
   ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (raw) => {
     let d; try { d = JSON.parse(raw); } catch { return; }
+    if (d.t === 'call') return handleCall(ws, d);
     if (d.t === 'typing' && Number.isInteger(d.chat_id) && isMember(d.chat_id, uid)) {
       if (rateLimit(`typing:${uid}:${d.chat_id}`, 6, 5000)) emitChat(d.chat_id, 'typing', { chat_id: d.chat_id, user_id: uid }, uid);
     }
@@ -764,6 +852,8 @@ wss.on('connection', (ws) => {
     set?.delete(ws);
     if (set && !set.size) {
       sockets.delete(uid);
+      const live = userCall.get(uid);
+      if (live) live.grace[uid] = setTimeout(() => { if (!isOnline(uid)) endCall(live, 'disconnect'); }, DISCONNECT_GRACE);
       const now = Date.now();
       q('UPDATE users SET last_seen=? WHERE id=?').run(now, uid);
       for (const c of contactIds(uid)) sendTo(c, 'presence', { user_id: uid, online: false, last_seen: now });

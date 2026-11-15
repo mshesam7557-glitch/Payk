@@ -146,10 +146,7 @@ function previewOf(m) {
   if (!m) return { icon: '', text: 'هنوز پیامی نیست' };
   if (m.deleted) return { icon: '', text: 'این پیام حذف شد' };
   switch (m.type) {
-    case 'image': return { icon: 'image', text: m.body || 'عکس' };
-    case 'video': return { icon: 'video', text: m.body || 'ویدیو' };
     case 'voice': return { icon: 'mic', text: `پیام صوتی ${fmtDur(m.duration)}` };
-    case 'file': return { icon: 'file', text: m.file_name || 'فایل' };
     default: return { icon: '', text: m.body };
   }
 }
@@ -304,7 +301,7 @@ function renderLanding() {
     <header class="hero">
       <div>
         <h1>پیام بده، همین حالا.</h1>
-        <p class="lead">پیک یک پیام‌رسان سبک و تمیزه؛ متن و ویس و عکس و ویدیو بفرست، گروه بساز و ظاهرش رو دقیقاً مطابق سلیقه‌ات تنظیم کن. فقط یک نام کاربری و رمز عبور لازمه.</p>
+        <p class="lead">پیک یک پیام‌رسان سبک و تمیزه؛ پیام و ویس بفرست، تماس صوتی و تصویری بگیر، صفحه‌ات رو نشون بده و ظاهرش رو دقیقاً مطابق سلیقه‌ات تنظیم کن. فقط یک نام کاربری و رمز عبور لازمه.</p>
         <div class="cta"><a class="btn primary big" href="#/signup">شروع کن</a><a class="btn big" href="#/login">حساب دارم</a></div>
         <div class="theme-try"><span>تم رو همین‌جا امتحان کن:</span><div class="dots" id="theme-dots"></div></div>
       </div>
@@ -317,9 +314,9 @@ function renderLanding() {
       </div>
     </header>
     <section class="features">
-      <div class="feat"><span class="ic">${icon('mic')}</span><h3>ویس، عکس و ویدیو</h3><p>صدات رو ضبط کن، فایل رو بکشون داخل چت یا عکس رو مستقیم از کلیپ‌بورد بچسبون.</p></div>
+      <div class="feat"><span class="ic">${icon('mic')}</span><h3>ویس و تماس زنده</h3><p>پیام صوتی بفرست یا با یک لمس تماس صوتی و تصویری بگیر و صفحه‌ات رو به اشتراک بذار.</p></div>
       <div class="feat"><span class="ic">${icon('palette')}</span><h3>ظاهر مال خودته</h3><p>هشت تم آماده، رنگ دلخواه، پس‌زمینه‌ی چت، شکل حباب و اندازه‌ی متن.</p></div>
-      <div class="feat"><span class="ic">${icon('users')}</span><h3>گروه و گفتگوی خصوصی</h3><p>با نام کاربری دوستت پیدا کن، گروه بساز و واکنش و پاسخ به پیام رو استفاده کن.</p></div>
+      <div class="feat"><span class="ic">${icon('users')}</span><h3>گفتگوی خصوصی و گروه</h3><p>با نام کاربری دوستت رو پیدا کن، گروه بساز و به پیام‌ها واکنش بده یا جواب بده.</p></div>
       <div class="feat"><span class="ic">${icon('lock')}</span><h3>بدون ایمیل و شماره</h3><p>ثبت‌نام فقط با نام کاربری و رمز عبور انجام می‌شه. رمزها به‌صورت هش‌شده ذخیره می‌شن.</p></div>
       <div class="feat"><span class="ic">${icon('bolt')}</span><h3>لحظه‌ای و روان</h3><p>پیام‌ها همون لحظه می‌رسن، با نشانه‌ی دیده‌شدن و «در حال نوشتن…».</p></div>
       <div class="feat"><span class="ic">${icon('phone')}</span><h3>موبایل و کامپیوتر</h3><p>داخل مرورگر کار می‌کنه و روی گوشی می‌تونی به صفحه‌ی اصلی اضافه‌ش کنی.</p></div>
@@ -503,7 +500,7 @@ function teardownApp() {
   clearTimeout(wsTimer);
   S.chats.clear(); S.msgs.clear(); S.active = null; S.typing.clear(); S.pending.clear(); S.drafts.clear();
   S.replyTo = null; S.editing = null; voices.forEach((v) => v.audio.pause()); voices.clear();
-  stopRecording(true);
+  stopRecording(true); callCleanup();
   modalStack.slice().forEach((m) => m.close()); closePop(); $('.lightbox')?.remove();
   document.title = 'پیک | پیام‌رسان';
 }
@@ -617,6 +614,7 @@ function renderChatView(chat) {
   main.innerHTML = `<header class="chat-head">
       <button class="icon-btn back-btn" id="btn-back" aria-label="بازگشت">${icon('chev')}</button>
       <button class="who-wrap" id="head-info">${chatAvatar(chat, 'md')}<span class="who"><b></b><small></small></span></button>
+      ${chat.type === 'dm' && window.RTCPeerConnection ? `<button class="icon-btn" id="btn-call" title="تماس صوتی" aria-label="تماس صوتی">${icon('call')}</button><button class="icon-btn" id="btn-vcall" title="تماس تصویری" aria-label="تماس تصویری">${icon('video')}</button>` : ''}
       <button class="icon-btn" id="btn-find" title="جستجو در گفتگو" aria-label="جستجو در گفتگو">${icon('search')}</button>
       <button class="icon-btn" id="btn-info" title="اطلاعات" aria-label="اطلاعات">${icon('info')}</button>
     </header>
@@ -627,16 +625,16 @@ function renderChatView(chat) {
       <div class="composer" id="composer">
         <button class="icon-btn" id="btn-emoji" data-keep-pop title="شکلک" aria-label="شکلک">${icon('smile')}</button>
         <textarea id="input" rows="1" placeholder="پیام بنویس…" enterkeyhint="send" aria-label="متن پیام" maxlength="4000"></textarea>
-        <button class="icon-btn" id="btn-attach" data-keep-pop title="پیوست" aria-label="پیوست">${icon('clip')}</button>
         <button class="icon-btn" id="btn-mic" title="ضبط صدا" aria-label="ضبط پیام صوتی">${icon('mic')}</button>
         <button class="icon-btn send-btn hidden" id="btn-send" title="ارسال" aria-label="ارسال">${icon('send')}</button>
       </div>
-      <input type="file" id="file-input" multiple hidden>
     </div>`;
   updateHeader();
   $('#btn-back').onclick = () => { location.hash = '#/'; };
   $('#head-info').onclick = $('#btn-info').onclick = () => openChatInfo(S.active);
   $('#btn-find').onclick = () => openChatSearch(S.active);
+  $('#btn-call')?.addEventListener('click', () => startCall(S.active, false));
+  $('#btn-vcall')?.addEventListener('click', () => startCall(S.active, true));
   wireComposer();
   wireMessages();
   const d = S.drafts.get(chat.id);
@@ -714,19 +712,13 @@ function buildRow(m, prev, chat) {
   const first = row.classList.contains('first');
   const group = chat.type === 'group';
   if (!mine && group) { const u = userOf(chat, m.sender_id); row.innerHTML = `<div class="av-slot">${first ? avatarHTML(u, 'sm') : ''}</div>`; }
-  const hasMedia = !m.deleted && (m.type === 'image' || m.type === 'video');
-  const nocap = hasMedia && !m.body && !m.reply && !(!mine && group && first);
-  const b = el('div', `msg ${m.deleted ? 'deleted' : ''} ${hasMedia ? 'has-media' : ''} ${nocap ? 'nocap' : ''}`);
+  const b = el('div', `msg ${m.deleted ? 'deleted' : ''}`);
   let h = '';
   if (!mine && group && first) h += `<div class="sender" style="--sc:color-mix(in srgb,hsl(${hueOf(userOf(chat, m.sender_id).username)} 75% 58%) 78%,var(--in-text))">${esc(userOf(chat, m.sender_id).display_name)}</div>`;
   if (m.reply && !m.deleted) h += quoteHTML(m.reply, chat);
   if (m.deleted) h += `<div class="text">${icon('trash')} این پیام حذف شد</div>`;
   else {
-    const url = '/files/' + encodeURIComponent(m.file || '');
-    if (m.type === 'image') h += `<a class="media" data-act="lightbox" data-src="${url}" href="${url}"><img src="${url}" alt="${esc(m.file_name || 'عکس')}" loading="lazy" style="min-height:7rem"></a>`;
-    else if (m.type === 'video') h += `<div class="media"><video src="${url}#t=0.1" controls preload="metadata" playsinline style="min-height:8rem"></video></div>`;
-    else if (m.type === 'voice') h += `<div class="voice" data-voice="${m.id}"><button class="pp" data-act="play" aria-label="پخش">${icon('play')}</button><div class="wave" data-act="seek">${waveBars(m.id)}</div><span class="dur">${fmtDur(m.duration)}</span><button class="spd" data-act="speed" aria-label="سرعت پخش">۱×</button></div>`;
-    else if (m.type === 'file') h += `<a class="file-card" href="${url}?dl=1" download="${esc(m.file_name || 'file')}"><span class="ico">${icon('file')}</span><span><b>${esc(m.file_name || 'فایل')}</b><small>${fmtSize(m.file_size || 0)}</small></span></a>`;
+    if (m.type === 'voice') h += `<div class="voice" data-voice="${m.id}"><button class="pp" data-act="play" aria-label="پخش">${icon('play')}</button><div class="wave" data-act="seek">${waveBars(m.id)}</div><span class="dur">${fmtDur(m.duration)}</span><button class="spd" data-act="speed" aria-label="سرعت پخش">۱×</button></div>`;
     if (m.body) h += `<div class="text"></div>`;
   }
   const reacts = (m.reactions || []).map((r) => `<button class="react ${r.users.includes(S.me.id) ? 'mine' : ''}" data-act="react" data-emoji="${r.emoji}" title="${esc(r.users.map((u) => (u === S.me.id ? 'شما' : userOf(chat, u).display_name)).join('، '))}">${r.emoji}<span>${fa(r.users.length)}</span></button>`).join('');
@@ -847,7 +839,6 @@ function onMessageClick(e) {
   switch (t.dataset.act) {
     case 'menu': { e.preventDefault(); const r = t.getBoundingClientRect(); openMsgMenu(id, r.left, r.bottom); break; }
     case 'react': reactTo(id, t.dataset.emoji); break;
-    case 'lightbox': e.preventDefault(); openLightbox(t.dataset.src); break;
     case 'quote': jumpTo(Number(t.dataset.id)); break;
     case 'play': toggleVoice(t.closest('[data-voice]')); break;
     case 'seek': seekVoice(t.closest('[data-voice]'), e); break;
@@ -883,12 +874,6 @@ function openMsgMenu(id, x, y) {
 async function reactTo(id, emoji) {
   try { const d = await api('POST', `/api/messages/${id}/react`, { emoji }); replaceMessage(d.message); } catch (e) { toast(e.message, true); }
 }
-function openLightbox(src) {
-  const lb = el('div', 'lightbox', `<div class="bar"><a class="icon-btn" href="${src}?dl=1" download aria-label="دانلود">${icon('download')}</a><button class="icon-btn" aria-label="بستن">${icon('close')}</button></div><img src="${src}" alt="">`);
-  lb.addEventListener('click', (e) => { if (!e.target.closest('img,a')) lb.remove(); });
-  document.body.append(lb);
-}
-
 /* ───── پخش پیام صوتی ───── */
 const voices = new Map();
 function getVoice(m) {
@@ -947,10 +932,6 @@ function wireComposer() {
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && S.settings.enterSend && !matchMedia('(pointer: coarse)').matches) { e.preventDefault(); submitComposer(); }
   });
-  inp.addEventListener('paste', (e) => {
-    const files = [...(e.clipboardData?.files || [])];
-    if (files.length) { e.preventDefault(); sendFiles(files); }
-  });
   $('#btn-send').onclick = submitComposer;
   $('#btn-mic').onclick = startRecording;
   $('#btn-emoji').onclick = (e) => {
@@ -963,13 +944,6 @@ function wireComposer() {
       t.setRangeText(b.textContent, s, t.selectionEnd ?? s, 'end'); t.focus(); autoGrow(); toggleSendMic();
     });
   };
-  const fi = $('#file-input');
-  $('#btn-attach').onclick = (e) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const p = openPop(`<button class="item" data-k="media">${icon('image')} عکس یا ویدیو</button><button class="item" data-k="file">${icon('file')} فایل</button>`, r.left, r.top - 100);
-    p.addEventListener('click', (ev) => { const k = ev.target.closest('[data-k]')?.dataset.k; if (!k) return; closePop(); fi.accept = k === 'media' ? 'image/*,video/*' : ''; fi.click(); });
-  };
-  fi.onchange = () => { sendFiles([...fi.files]); fi.value = ''; };
   inp.focus({ preventScroll: true });
 }
 function setReply(m) {
@@ -1062,18 +1036,6 @@ function uploadFile(blob, kind, name, mime, onProgress) {
     xhr.send(blob);
   });
 }
-function sendFiles(files) {
-  const chatId = S.active; if (!chatId) return;
-  for (const f of files) {
-    if (f.size > 60 * 1024 * 1024) { toast(`«${f.name}» بزرگ‌تر از ۶۰ مگابایته.`, true); continue; }
-    const okImg = /^image\/(jpeg|png|gif|webp|avif)$/.test(f.type), okVid = /^video\/(mp4|webm|quicktime|ogg)$/.test(f.type);
-    const type = okImg ? 'image' : okVid ? 'video' : 'file';
-    const p = { tmp: 't' + Date.now() + Math.random().toString(36).slice(2, 6), chatId, type, kind: type, blob: f, name: f.name || 'file', mime: type === 'file' ? 'application/octet-stream' : f.type, size: f.size, progress: 0, reply: S.replyTo?.id || null };
-    queuePending(p); sendPending(p);
-  }
-  cancelComposerMode();
-}
-
 /* ───── ضبط صدا ───── */
 let rec = null;
 async function startRecording() {
@@ -1130,20 +1092,6 @@ function wireComposerAfterRestore() {
   autoGrow(); toggleSendMic();
 }
 
-/* ───── کشیدن و رها کردن فایل ───── */
-let dragDepth = 0;
-document.addEventListener('dragenter', (e) => {
-  if (!S.active || !e.dataTransfer?.types?.includes('Files')) return;
-  dragDepth++; if (!$('.drop-hint')) $('#main').append(el('div', 'drop-hint', 'فایل رو اینجا رها کن'));
-});
-document.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('.drop-hint')?.remove(); } });
-document.addEventListener('dragover', (e) => { if (S.active) e.preventDefault(); });
-document.addEventListener('drop', (e) => {
-  dragDepth = 0; $('.drop-hint')?.remove();
-  if (!S.active || !e.dataTransfer?.files?.length) return;
-  e.preventDefault(); sendFiles([...e.dataTransfer.files]);
-});
-
 /* ───── خوانده شدن ───── */
 const markReadSoon = debounce(async () => {
   const id = S.active; if (!id || document.hidden || !S.me) return;
@@ -1199,6 +1147,7 @@ function onEvent(d) {
     case 'chat:new': S.chats.set(d.chat.id, d.chat); renderChatList(); updateTitle(); return;
     case 'chat:update': refreshChats().then(() => { if (S.active) { if (!S.chats.has(S.active)) location.hash = '#/'; else updateHeader(); } }); return;
     case 'chat:remove': S.chats.delete(d.chat_id); S.msgs.delete(d.chat_id); if (S.active === d.chat_id) location.hash = '#/'; renderChatList(); updateTitle(); return;
+    case 'call': return onCallEvent(d);
     case 'typing': return onTyping(d);
     case 'presence': return onPresence(d);
     case 'read': {
@@ -1455,6 +1404,287 @@ function tabSecurity(m) {
     await api('DELETE', '/api/me', { password: $('#del-pw', m.body).value });
     modalStack.slice().forEach((x) => x.close()); teardownApp(); S.me = null; location.hash = '#/'; route(); toast('حساب حذف شد');
   }); };
+}
+
+/* ═════════ تماس صوتی و تصویری (WebRTC) ═════════ */
+let CALL = null;       // تماس فعلی
+let ringTimer = null;
+const CALL_TEXT = {
+  rejected: 'تماس رد شد.', missed: 'پاسخی داده نشد.', busy: 'کاربر در تماس دیگری است.', unavailable: 'کاربر الان آنلاین نیست.',
+  ended: 'تماس تمام شد.', disconnect: 'ارتباط قطع شد.',
+};
+const callSig = (op, extra = {}) => { if (S.ws?.readyState === 1 && CALL) S.ws.send(JSON.stringify({ t: 'call', op, call_id: CALL.id, chat_id: CALL.chatId, ...extra })); };
+const callData = (data) => callSig('signal', { data });
+const callState = () => { if (!CALL) return; callSig('state', { data: { mic: CALL.micOn, cam: !!CALL.cam, screen: !!CALL.screen } }); };
+const newCallId = () => (crypto.randomUUID ? crypto.randomUUID() : 'c' + Date.now() + Math.random().toString(36).slice(2));
+
+function ringStart(incoming) {
+  ringStop();
+  const play = () => {
+    try {
+      audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const t = audioCtx.currentTime;
+      const seq = incoming ? [[523, 0], [659, 0.18], [784, 0.36], [659, 0.7], [784, 0.88]] : [[440, 0], [440, 0.5]];
+      for (const [f, at] of seq) {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = incoming ? 'triangle' : 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t + at); g.gain.exponentialRampToValueAtTime(incoming ? 0.2 : 0.08, t + at + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + at + (incoming ? 0.2 : 0.4));
+        o.connect(g).connect(audioCtx.destination); o.start(t + at); o.stop(t + at + 0.45);
+      }
+    } catch {}
+    if (incoming) navigator.vibrate?.([300, 200, 300]);
+  };
+  play(); ringTimer = setInterval(play, incoming ? 2400 : 3000);
+}
+function ringStop() { clearInterval(ringTimer); ringTimer = null; navigator.vibrate?.(0); }
+
+async function fetchIce() {
+  try { return (await api('GET', '/api/ice')).iceServers; } catch { return [{ urls: 'stun:stun.l.google.com:19302' }]; }
+}
+async function getMedia(video) {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('مرورگر شما از تماس پشتیبانی نمی‌کند (برای تماس باید سایت با HTTPS باز شده باشد).');
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : false });
+  } catch (e) {
+    if (e.name === 'NotAllowedError') throw new Error('اجازه‌ی میکروفون' + (video ? ' و دوربین' : '') + ' داده نشد. از تنظیمات مرورگر فعالش کن.');
+    if (e.name === 'NotFoundError') throw new Error('میکروفون' + (video ? ' یا دوربین' : '') + ' پیدا نشد.');
+    throw new Error('دسترسی به میکروفون' + (video ? ' یا دوربین' : '') + ' ممکن نشد.');
+  }
+}
+function newCall(fields) {
+  return { micOn: true, cam: null, screen: null, mic: null, peer: { mic: true, cam: false, screen: false }, chain: Promise.resolve(), making: false, ignore: false, attached: false, remote: new MediaStream(), startedAt: 0, ...fields };
+}
+
+async function startCall(chatId, video) {
+  if (CALL) return toast('الان در یک تماس هستی.', true);
+  const chat = S.chats.get(chatId); if (!chat || chat.type !== 'dm') return;
+  if (!S.ws || S.ws.readyState !== 1) return toast('اتصال برقرار نیست؛ چند لحظه بعد دوباره امتحان کن.', true);
+  const peer = otherOf(chat);
+  let stream;
+  try { stream = await getMedia(video); } catch (e) { return toast(e.message, true); }
+  if (CALL) { stream.getTracks().forEach((t) => t.stop()); return; }
+  CALL = newCall({ id: newCallId(), chatId, role: 'caller', video, peerUser: peer, state: 'ringing', mic: stream.getAudioTracks()[0], cam: stream.getVideoTracks()[0] || null, polite: false });
+  callSig('invite', { video });
+  renderCallUI(); ringStart(false);
+}
+async function acceptCall() {
+  const c = CALL; if (!c || c.state !== 'incoming') return;
+  ringStop();
+  let stream;
+  try { stream = await getMedia(c.video); }
+  catch (e) {
+    if (c.video) { try { stream = await getMedia(false); toast('دوربین در دسترس نبود؛ فقط با صدا وصل شدی.', true); } catch (e2) { toast(e2.message, true); return declineCall(); } }
+    else { toast(e.message, true); return declineCall(); }
+  }
+  if (CALL !== c) { stream.getTracks().forEach((t) => t.stop()); return; }
+  c.mic = stream.getAudioTracks()[0]; c.cam = stream.getVideoTracks()[0] || null;
+  c.state = 'connecting'; c.polite = true;
+  c.ice = await fetchIce();
+  if (CALL !== c) return;
+  setupPeer(c);
+  callSig('accept');
+  renderCallUI();
+}
+function declineCall() { if (!CALL) return; callSig('reject'); callCleanup(); }
+function hangUp() { if (!CALL) return; callSig('end'); callCleanup(); }
+
+function setupPeer(c) {
+  const pc = new RTCPeerConnection({ iceServers: c.ice });
+  c.pc = pc;
+  pc.onicecandidate = ({ candidate }) => { if (candidate) callData({ cand: candidate.toJSON() }); };
+  pc.ontrack = (e) => {
+    c.remote.addTrack(e.track);
+    const v = $('#call-remote'); if (v && v.srcObject !== c.remote) v.srcObject = c.remote;
+    v?.play?.().catch(() => {});
+  };
+  pc.onnegotiationneeded = async () => {
+    try { c.making = true; await pc.setLocalDescription(); callData({ desc: pc.localDescription.toJSON() }); }
+    catch (e) { console.warn('negotiation', e); } finally { c.making = false; }
+  };
+  pc.onconnectionstatechange = () => {
+    if (CALL !== c) return;
+    const st = pc.connectionState;
+    if (st === 'connected') { if (!c.startedAt) { c.startedAt = Date.now(); c.state = 'active'; c.tick = setInterval(updateCallUI, 1000); callState(); } c.note = ''; ringStop(); }
+    else if (st === 'disconnected') { c.note = 'اتصال ضعیف شد…'; try { pc.restartIce(); } catch {} }
+    else if (st === 'failed') {
+      if (!c.retried) { c.retried = true; c.note = 'در حال تلاش دوباره…'; try { pc.restartIce(); } catch {} }
+      else { toast('اتصال صدا و تصویر برقرار نشد. ممکنه شبکه‌ی یکی از شما مانع شده باشه.', true); hangUp(); return; }
+    }
+    updateCallUI();
+  };
+  if (c.role === 'caller') {
+    const a = pc.addTransceiver('audio', { direction: 'sendrecv' });
+    const v = pc.addTransceiver('video', { direction: 'sendrecv' });
+    a.sender.replaceTrack(c.mic);
+    v.sender.replaceTrack(c.screen || c.cam || null);
+    c.attached = true;
+  }
+}
+// طرف پاسخ‌دهنده: بعد از دریافت offer، رسانه‌ی خودش را روی همان transceiverها می‌گذارد
+function attachLocal(c) {
+  if (c.attached) return; c.attached = true;
+  for (const t of c.pc.getTransceivers()) {
+    const kind = t.receiver.track.kind;
+    t.direction = 'sendrecv';
+    t.sender.replaceTrack(kind === 'audio' ? c.mic : (c.screen || c.cam || null));
+  }
+}
+function handleSignal(c, { desc, cand }) {
+  c.chain = c.chain.then(async () => {
+    const pc = c.pc; if (!pc || CALL !== c) return;
+    try {
+      if (desc) {
+        const collision = desc.type === 'offer' && (c.making || pc.signalingState !== 'stable');
+        c.ignore = !c.polite && collision;
+        if (c.ignore) return;
+        await pc.setRemoteDescription(desc);
+        if (desc.type === 'offer') {
+          attachLocal(c);
+          await pc.setLocalDescription();
+          callData({ desc: pc.localDescription.toJSON() });
+          callState();
+        }
+      } else if (cand) {
+        try { await pc.addIceCandidate(cand); } catch (e) { if (!c.ignore) throw e; }
+      }
+    } catch (e) { console.warn('signal', e); }
+  });
+}
+const videoSender = (c) => c.pc?.getTransceivers().find((t) => t.receiver.track.kind === 'video')?.sender;
+
+function toggleMic() {
+  const c = CALL; if (!c?.mic) return;
+  c.micOn = !c.micOn; c.mic.enabled = c.micOn; callState(); updateCallUI();
+}
+async function toggleCam() {
+  const c = CALL; if (!c || !c.pc) return;
+  try {
+    if (c.cam) {
+      c.cam.stop(); c.cam = null;
+      if (!c.screen) await videoSender(c)?.replaceTrack(null);
+    } else {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } });
+      c.cam = s.getVideoTracks()[0];
+      if (!c.screen) await videoSender(c)?.replaceTrack(c.cam);
+    }
+  } catch (e) { toast(e.name === 'NotAllowedError' ? 'اجازه‌ی دوربین داده نشد.' : 'دوربین در دسترس نیست.', true); }
+  callState(); updateCallUI();
+}
+async function toggleScreen() {
+  const c = CALL; if (!c || !c.pc) return;
+  if (c.screen) return stopScreen();
+  if (!navigator.mediaDevices?.getDisplayMedia) return toast('این مرورگر یا دستگاه از اشتراک صفحه پشتیبانی نمی‌کند. روی کامپیوتر امتحان کن.', true);
+  try {
+    const s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: false });
+    const t = s.getVideoTracks()[0]; t.contentHint = 'detail';
+    t.onended = () => { if (CALL === c && c.screen === t) stopScreen(); };
+    c.screen = t;
+    await videoSender(c)?.replaceTrack(t);
+    callState(); updateCallUI();
+  } catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast('اشتراک صفحه شروع نشد.', true); }
+}
+async function stopScreen() {
+  const c = CALL; if (!c?.screen) return;
+  c.screen.onended = null; c.screen.stop(); c.screen = null;
+  try { await videoSender(c)?.replaceTrack(c.cam || null); } catch {}
+  callState(); updateCallUI();
+}
+
+function callCleanup() {
+  const c = CALL; CALL = null;
+  ringStop();
+  $('#call')?.remove(); $('#call-incoming')?.remove();
+  if (!c) return;
+  clearInterval(c.tick);
+  for (const t of [c.mic, c.cam, c.screen]) { try { if (t) { t.onended = null; t.stop(); } } catch {} }
+  try { c.pc?.close(); } catch {}
+}
+
+function onCallEvent(d) {
+  const { op } = d;
+  if (op === 'incoming') {
+    if (CALL) return; // سرور خودش «مشغول» را برمی‌گرداند
+    const chat = S.chats.get(d.chat_id);
+    CALL = newCall({ id: d.call_id, chatId: d.chat_id, role: 'callee', video: !!d.video, peerUser: chat ? otherOf(chat) : d.from, state: 'incoming' });
+    renderIncoming(d.from);
+    ringStart(true);
+    if (document.hidden && S.settings.notify && 'Notification' in window && Notification.permission === 'granted') {
+      try { const n = new Notification(d.from.display_name, { body: d.video ? 'تماس تصویری ورودی' : 'تماس صوتی ورودی', icon: '/icon.svg', tag: 'call', requireInteraction: true, lang: 'fa', dir: 'rtl' }); n.onclick = () => { window.focus(); n.close(); }; } catch {}
+    }
+    return;
+  }
+  const c = CALL; if (!c || c.id !== d.call_id) return;
+  if (op === 'accepted' && c.role === 'caller') {
+    ringStop(); c.state = 'connecting';
+    fetchIce().then((ice) => { if (CALL !== c) return; c.ice = ice; setupPeer(c); callState(); updateCallUI(); });
+  } else if (op === 'taken') { toast('تماس روی دستگاه دیگرت پاسخ داده شد.'); callCleanup(); }
+  else if (op === 'signal') handleSignal(c, d.data);
+  else if (op === 'state') { c.peer = { ...c.peer, ...d.data }; updateCallUI(); }
+  else if (op === 'ended') {
+    const r = d.reason;
+    const dur = c.startedAt ? ' · ' + fmtDur((Date.now() - c.startedAt) / 1000) : '';
+    let text = CALL_TEXT[r] || CALL_TEXT.ended;
+    if (r === 'missed' && c.role === 'callee') text = 'تماس از دست رفت.';
+    if (r === 'rejected' && c.role === 'callee') text = 'تماس لغو شد.';
+    if (r === 'ended' && c.startedAt) text = 'تماس تمام شد' + dur;
+    callCleanup(); toast(text, r === 'unavailable' || r === 'busy'); blip('out');
+  }
+}
+
+/* ───── رابط تماس ───── */
+function renderIncoming(from) {
+  $('#call-incoming')?.remove();
+  const u = from || {};
+  const box = el('div', 'overlay');
+  box.id = 'call-incoming'; box.style.zIndex = 150;
+  box.innerHTML = `<div class="modal call-in" role="alertdialog" aria-label="تماس ورودی"><div class="call-in-body">
+    <div class="ring-av">${avatarHTML(u, 'xl')}</div><h2>${esc(u.display_name || 'کاربر')}</h2>
+    <p class="muted">${CALL.video ? 'تماس تصویری ورودی…' : 'تماس صوتی ورودی…'}</p>
+    <div class="call-in-actions"><button class="call-btn hang" id="ci-no" aria-label="رد تماس">${icon('call')}</button><button class="call-btn ok" id="ci-yes" aria-label="پاسخ">${icon(CALL.video ? 'video' : 'call')}</button></div></div></div>`;
+  document.body.append(box);
+  $('#ci-no').onclick = () => { box.remove(); declineCall(); };
+  $('#ci-yes').onclick = () => { box.remove(); acceptCall(); };
+  $('#ci-yes').focus();
+}
+function renderCallUI() {
+  $('#call')?.remove();
+  const c = CALL; if (!c) return;
+  const canShare = !!navigator.mediaDevices?.getDisplayMedia;
+  const root = el('div', 'call');
+  root.id = 'call';
+  root.innerHTML = `<video id="call-remote" autoplay playsinline></video>
+    <div class="call-center" id="call-center"><div class="ring-av">${avatarHTML(c.peerUser || {}, 'xl')}</div><h2>${esc((c.peerUser || {}).display_name || '')}</h2></div>
+    <div class="call-top"><b>${esc((c.peerUser || {}).display_name || '')}</b><span id="call-status"></span></div>
+    <video id="call-local" class="pip" autoplay playsinline muted></video>
+    <div class="call-bar">
+      <button class="call-btn" id="cb-mic" aria-label="میکروفون"></button>
+      <button class="call-btn" id="cb-cam" aria-label="دوربین"></button>
+      ${canShare ? '<button class="call-btn" id="cb-scr" aria-label="اشتراک صفحه"></button>' : ''}
+      <button class="call-btn hang" id="cb-end" aria-label="پایان تماس">${icon('call')}</button>
+    </div>`;
+  document.body.append(root);
+  $('#cb-mic').onclick = toggleMic; $('#cb-cam').onclick = toggleCam; $('#cb-scr')?.addEventListener('click', toggleScreen); $('#cb-end').onclick = hangUp;
+  const rv = $('#call-remote'); rv.srcObject = c.remote; rv.play?.().catch(() => {});
+  updateCallUI();
+}
+function updateCallUI() {
+  const c = CALL, root = $('#call'); if (!c || !root) return;
+  const status = $('#call-status');
+  status.textContent = c.state === 'ringing' ? 'در حال زنگ زدن…' : c.state === 'connecting' ? 'در حال اتصال…' : (c.note || (c.startedAt ? fmtDur((Date.now() - c.startedAt) / 1000) : 'در حال اتصال…'));
+  const showRemote = c.peer.cam || c.peer.screen;
+  root.classList.toggle('has-remote', !!showRemote);
+  root.classList.toggle('contain', !!c.peer.screen);
+  const local = c.screen || c.cam;
+  const lv = $('#call-local');
+  root.classList.toggle('has-local', !!local);
+  if (lv) { const want = local ? new MediaStream([local]) : null; if ((lv.srcObject?.getVideoTracks?.()[0] || null) !== (local || null)) lv.srcObject = want; lv.classList.toggle('screen', !!c.screen); }
+  const ready = !!c.pc;
+  const set = (id, on, ic, label, off) => { const b = $(id); if (!b) return; b.classList.toggle('off', off); b.classList.toggle('on', on); b.disabled = !ready; b.innerHTML = icon(ic); b.setAttribute('aria-label', label); b.title = label; b.setAttribute('aria-pressed', on); };
+  set('#cb-mic', !c.micOn, c.micOn ? 'mic' : 'mic-off', c.micOn ? 'بی‌صدا کردن میکروفون' : 'روشن کردن میکروفون', !c.micOn);
+  set('#cb-cam', !!c.cam, c.cam ? 'video' : 'video-off', c.cam ? 'خاموش کردن دوربین' : 'روشن کردن دوربین', !c.cam);
+  set('#cb-scr', !!c.screen, 'screen', c.screen ? 'توقف اشتراک صفحه' : 'اشتراک صفحه', false);
+  if (c.screen) $('#cb-scr')?.classList.add('on');
 }
 
 boot();
